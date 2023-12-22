@@ -1,8 +1,8 @@
 {
-	"name": "bullseye-openscad",
+	"name": "bookworm-openscad",
 
 	"dockerComposeFile": "./docker-compose.yaml",
-	"service": "bullseye-openscad",
+	"service": "bookworm-openscad",
 
 	"workspaceFolder": "/workspaces",
 	

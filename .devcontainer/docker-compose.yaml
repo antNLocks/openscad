@@ -1,9 +1,9 @@
 version: "3"
 
 services:
-  bullseye-openscad:
-    image: bullseye-openscad-devcontainer
-    container_name: bullseye-openscad-devcontainer_c
+  bookworm-openscad:
+    image: bookworm-openscad-devcontainer
+    container_name: bookworm-openscad-devcontainer_c
     build:
       dockerfile: dev.Dockerfile
     volumes:
