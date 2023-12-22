@@ -1,0 +1,20 @@
+version: "3"
+
+services:
+  bullseye-openscad:
+    image: bullseye-openscad-devcontainer
+    container_name: bullseye-openscad-devcontainer_c
+    build:
+      dockerfile: dev.Dockerfile
+    volumes:
+      - ..:/workspaces:cached
+    network_mode: host
+
+
+# If we just use `docker compose up`, we need to forward x11
+# But here, the dev container extension does it automatically
+
+    # environment:
+    #   - DISPLAY=${DISPLAY}
+    # volumes:
+    #   - /tmp/.X11-unix:/tmp/.X11-unix

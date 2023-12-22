@@ -1,0 +1,17 @@
+{
+	"name": "bullseye-openscad",
+
+	"dockerComposeFile": "./docker-compose.yaml",
+	"service": "bullseye-openscad",
+
+	"workspaceFolder": "/workspaces",
+	
+	// Prevent the container from shutting down
+	"overrideCommand": true,
+
+	"customizations": {
+		"vscode": {
+		  "extensions": ["antyos.openscad"]
+		}
+	}
+}
