@@ -1,13 +1,25 @@
 include <BOSL2/std.scad>;
 include <BOSL2/beziers.scad>;
 
-//$fn=100;
 
+////////////////////////
+// Modules definition //
+////////////////////////
+
+
+// Makes a cut along z axis at h_cut height, then linear_extrudes the cut (h height)
 module proj_extrude(h_cut, h) {
     translate([0, 0, h_cut]) linear_extrude(h) projection(cut = true) translate([0, 0, -h_cut])  children();
 }
 
-module _spiral(height, bezier_outer_profile, bezier_inner_profile, bezier_angleratio_profile, segments) {
+// Makes a connected path of sphere (extrusion-like along z axis)
+//  height: height of the heightest sphere center
+//  bezier_outer_profile: a bezier profile which maps height (0 => bottom, 1 => top) to the distance sphere barycenter - z axis
+//  bezier_inner_profile: a bezier profile which maps height (0 => bottom, 1 => top) to the radius of the sphere
+//  bezier_angleratio_profile: a bezier profile which maps height (0 => bottom, 1 => top) to the angle ratio (0 => 0°, 1 => 360°) used to rotate the sphere aroud the z axis
+//  sphere_fn: Number of polygons used to draw the spheres
+//  segments: number of spheres drawn (discretization step)
+module _spiral(height, bezier_outer_profile, bezier_inner_profile, bezier_angleratio_profile, sphere_fn, segments) {
 
     // Calculer les profils de rayon intérieur et extérieur le long de la hauteur
     outer_radii = bezier_points(bezier_outer_profile, [0:1/segments:1]);
@@ -33,64 +45,81 @@ module _spiral(height, bezier_outer_profile, bezier_inner_profile, bezier_angler
 
         // Connecter les points avec des formes pour former la spirale
         hull() {
-            translate(p1) sphere(r=r_inner1, $fn=4);
-            translate(p2) sphere(r=r_inner2, $fn=4);
+            translate(p1) sphere(r=r_inner1, $fn=sphere_fn);
+            translate(p2) sphere(r=r_inner2, $fn=sphere_fn);
         }
     }
 }
 
-
-module spiral(height1, height2, bezier_outer_profile, bezier_inner_profile, bezier_angleratio_profile, segments){
+// Makes a connected path of sphere (extrusion-like along z axis) but cut at a specific height
+//  height1: height of the raw _spiral
+//  height2: don't keep what's above height2 and under 0
+//  the rest => see above
+module spiral(height1, height2, bezier_outer_profile, bezier_inner_profile, bezier_angleratio_profile, sphere_fn, segments){
     max_outer_radius = max([for (i= [0: len(bezier_outer_profile)-1]) bezier_outer_profile[i][1]]);
     max_inner_radius = max([for (i= [0: len(bezier_inner_profile)-1]) bezier_inner_profile[i][1]]);
 
     intersection(){
-        _spiral(height1, bezier_outer_profile, bezier_inner_profile, bezier_angleratio_profile, segments);
+        _spiral(height1, bezier_outer_profile, bezier_inner_profile, bezier_angleratio_profile, sphere_fn, segments);
         cylinder(h=height2, r=max_outer_radius + max_inner_radius);
     }
 }
 
-
-module single_foot(h){
+// Define bezier profile of a single foot and use spiral to render one
+//  h: height of the foot
+//  the rest => see above
+module single_foot(h, sphere_fn, segments){
     bezier_outer_profile = [[0, 10], [0.25, 2.5], [0.75, 5], [1, 27.5]];
     bezier_inner_profile = [[0, 5], [0.25, 1.0], [0.75, 4.0], [1, 12.5]];
     bezier_angleratio_profile = [[0, 0], [0.25, 0.125], [0.75, 0.4], [1, 0.45]];
 
-    spiral(h+10, h, bezier_outer_profile, bezier_inner_profile, bezier_angleratio_profile, 50);
+    render() spiral(h+10, h, bezier_outer_profile, bezier_inner_profile, bezier_angleratio_profile, sphere_fn, segments);
 }
 
-module foots(h, h_bridge=0){
-    num_foot = 4;
+// Give glory to the artists
+module signature(){
+    scale([0.5, 0.5, 0.5])
+    translate([0,5,0])
+    mirror([1,0,0])
+    linear_extrude(1)
+    text("aLocks", halign="center", valign="baseline");
+
+    scale([0.5, 0.5, 0.5])
+    translate([0,-5,0])
+    mirror([1,0,0])
+    linear_extrude(1)
+    text("GPT-4", halign="center", valign="top");
+}
+
+// Foots rotated around the z axis - Support of the statue
+//  ALL PARAMETERS ARE GLOBAL FOR CENTRALISTAION => h_foots, num_foots, segments_foots, sphere_fn_foots
+module foots(){
     // Créer des pieds en spirale autour d'un cercle
-    for (k = [0:num_foot - 1]) {
-        rotate([0, 0, k * 360/num_foot])
-            single_foot(h);
+    for (k = [0:num_foots - 1]) {
+        rotate([0, 0, k * 360 / num_foots])
+            single_foot(h_foots, sphere_fn_foots, segments_foots);
     }
-    // Support tout en bas
-    cylinder(r=20, h=2.5);
-    
-    proj_extrude(h, h_bridge)
-    hull() {
-        rotate([0, 0, 2 * 360/num_foot])
-        single_foot(h);
-        rotate([0, 0, 3 * 360/num_foot])
-        single_foot(h);
-    };
-    proj_extrude(h, h_bridge)
-    hull() {
-        rotate([0, 0, 0 * 360/num_foot])
-        single_foot(h);
-        rotate([0, 0, 1 * 360/num_foot])
-        single_foot(h);
-    };
-}
 
-module foot_plate(h_foot, h) {
-    translate([0,0,-h_foot]) proj_extrude(h_foot, h) hull() foots(h_foot);
+    // Support signé tout en bas
+    difference() {
+        cylinder(r=r_base_foots, h=h_base_foots, $fn=500);
+        signature();
+    }
 }
 
 
-module hypograph(patch, h_min, segments=7) {
+
+// We want to have the exact (convex) profile of what can support the foots - will be used in an intersection with the loss
+//  h: the height of extruded profile (should be infinity when we do the intersection)
+module foot_plate(h) {
+    linear_extrude(h) hull() projection(cut=true) translate([0, 0, -h_foots]) foots();
+}
+
+// Draw the bezier patch as a local interpolation of adjacent cubes and fills down to h_min
+//  patch: bezier patch
+//  h_min: under limit of the hypograph
+//  segments: number of cubes used along x axis and along y axis (spatial discretization step)
+module hypograph(patch, h_min, segments) {
     tol = 0.2;
     pts = bezier_patch_points(patch, [0:1/segments:1], [0:1/segments:1]);
     for (i = [0:segments - 1]) {
@@ -114,26 +143,39 @@ module hypograph(patch, h_min, segments=7) {
     }
 }
 
-module loss(patch, h_foot, h_bridge, segments=7) {
+// The loss which is adjusted to the support : intersection between hypograph and foot_plate
+//  parameters => see above
+module loss(patch, segments) {
     intersection() {
-        translate([0,0,h_foot+h_bridge])
-        foot_plate(h_foot, 20);
-        hypograph(patch, h_foot+h_bridge, segments);
+        translate([0, 0, h_foots])
+        foot_plate(2*(h_loss - h_foots)); // Approximately. To be precise, we would need to calculate the heightest point of the bezier patch but flemme
+        hypograph(patch, h_foots, segments);
     }
 }
 
-module arrow(base_w, base_h, head_w, head_h, h1, h2) {
-    translate([0,0,h1])
-    linear_extrude(h2-h1) {
-        translate([-base_w/2, 0]) square([base_w, base_h], center=false);
-        translate([0, base_h]) polygon([
+// A beautiful gradient
+//  body_w: width of the body
+//  body_l: length of the body
+//  head_w: width of the head
+//  head_l: length of the head
+//  h: height
+module arrow(body_w, body_l, head_w, head_l, h) {
+    linear_extrude(h) {
+        translate([-body_w/2, 0]) square([body_w, body_l], center=false);
+        translate([0, body_l]) polygon([
             [head_w / 2, 0],
-            [0, head_h],
+            [0, head_l],
             [-head_w / 2, 0]
         ]);
     };
 }
 
+// A beautiful theta
+//  body_w: width of the body
+//  body_l: length of the body
+//  head_w: width of the head
+//  head_l: length of the head
+//  h: height
 module theta(leng, depth, width){
     angle = 75;
     translate([0,0,sin(angle)*leng+width/2]){
@@ -148,9 +190,10 @@ module theta(leng, depth, width){
     }
 }
 
-
-module upper_body(h, w, h_foot, h_bridge) {
-
+// The statue !
+//  h: height indication used to build the bezier patch around this height
+//  w: lenght of the square to delimit the patch
+module upper_body(h, w) {
     patch = [
         [[-w/2,-w/2,h-2.5], [0,-w/2,h], [w/2,-w/2,h]],
         [[-w/2,0,h], [0,0,h-50], [w/2,0,h]],
@@ -164,42 +207,46 @@ module upper_body(h, w, h_foot, h_bridge) {
     n_grad = bezier_patch_normals(patch, 0.5, 0.7);
     grad =  -[n_grad[0],n_grad[1],0]/n_grad[2];
     
-    translate([pt_grad[0],pt_grad[1],0]) rotate(acos(-grad[1]/norm(grad)),v=[0,0,1/grad[0]])
-    arrow(base_w=3.5, base_h=10, head_w=7.5, head_h=5, h1=h_foot+h_bridge, h2=pt_grad[2]+1);
+    translate([pt_grad[0], pt_grad[1], h_foots]) rotate(acos(-grad[1]/norm(grad)),v=[0,0,1/grad[0]])
+    arrow(body_w=3.5, body_l=10, head_w=7.5, head_l=5, h=pt_grad[2] + 1 - h_foots);
     
     translate(pt_grad) rotate(acos(-grad[1]/norm(grad)),v=[0,0,1/grad[0]]) translate([0,-4,0.4]) theta(3.5, 3.5, 1);
     
-    loss(patch, h_foot, h_bridge, segments_loss);
+    render() loss(patch, segments_loss);
 }
 
-module signature(){
-    scale([0.5, 0.5, 0.5])
-    translate([0,5,0])
-    mirror([1,0,0])
-    linear_extrude(1)
-    text("aLocks", halign="center", valign="baseline");
-
-    scale([0.5, 0.5, 0.5])
-    translate([0,-5,0])
-    mirror([1,0,0])
-    linear_extrude(1)
-    text("GPT-4", halign="center", valign="top");
-}
-
-h_foot = 50;
-h_bridge=0;
 
 
-render() difference(){
-    foots(h_foot, h_bridge);
-    signature();
-};
+///////////////////////
+// Global parameters //
+///////////////////////
 
-h = 60;
-w = 70;
-//segments_loss = 100;
-segments_loss = 5;
 
-//translate([0,0,-h_foot]) 
-render() upper_body(h, w, h_foot, h_bridge);
+// Global geometry parameters
+h_foots = 50;
+r_base_foots = 20;
+h_base_foots = 2.5;
+num_foots = 4;
+sphere_fn_foots=4;
 
+h_loss = 60;
+w_loss = 70;
+
+
+// Details parameters: high parameters => slow to render
+//// For working
+segments_foots = 50;
+segments_loss = 10;
+//// For exporting
+// segments_foots = 200;
+// segments_loss = 200;
+
+
+
+//////////
+// Main //
+//////////
+
+foots();
+//translate([0,0,-h_foots]) // If we want to print just the upper_body: comment the line above and decomment this one
+upper_body(h_loss, w_loss);
